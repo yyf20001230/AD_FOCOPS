@@ -1,6 +1,6 @@
 Implementation for First Order Constraint Optimization in Policy Space (FOCOPS).
 
-Link to paper https://arxiv.org/abs/2002.06506
+Link to FOCOPS paper https://arxiv.org/abs/2002.06506
 
 ### Requirements
 [pytorch >= 1.3.1](https://pytorch.org/) <br>
@@ -13,7 +13,7 @@ https://github.com/ymzhang01/mujoco-circle.
 Example: Humanoid task in the robots with speed 
 limits experiments (using the default parameters)
 ```
-python focops_main.py --env-id='Humanoid-v3' --constraint='velocity'
+python focops_main.py --env-id='Humanoid-v4' --constraint='velocity'
 ```
 
 
