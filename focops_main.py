@@ -32,21 +32,21 @@ class FOCOPS:
                  nu_max,
                  cost_lim,
                  l2_reg,
-                #  delay_steps,
+                 delay_steps,
                  score_queue,
                  cscore_queue,
                  logger):
 
 
         self.env = env
-        # self.delay_steps = delay_steps
+        self.delay_steps = delay_steps
 
-        # # Initialize observation and action buffers for delay
-        # self.obs_buffer = deque(maxlen=delay_steps + 1)
-        # self.action_buffer = deque(maxlen=delay_steps)
+        # Initialize observation and action buffers for delay
+        self.obs_buffer = deque(maxlen=delay_steps + 1)
+        self.action_buffer = deque(maxlen=delay_steps)
 
-        # # Get augmented state dimension (state + delay_steps * action_dim)
-        # self.aug_obs_dim = env.observation_space.shape[0] + delay_steps * env.action_space.shape[0]
+        # Get augmented state dimension (state + delay_steps * action_dim)
+        self.aug_obs_dim = env.observation_space.shape[0] + delay_steps * env.action_space.shape[0]
 
         self.policy = policy_net
         self.value_net = value_net
@@ -79,6 +79,22 @@ class FOCOPS:
         self.score_queue = score_queue
         self.cscore_queue = cscore_queue
 
+    def get_augmented_state(self, state):
+        """Convert raw state to augmented state with action history"""
+        # Initialize action buffer if empty
+        while len(self.action_buffer) < self.delay_steps:
+            self.action_buffer.append(self.env.action_space.sample())
+            
+        # Concatenate state with action history
+        action_history = torch.tensor(np.array(list(self.action_buffer))).flatten()
+        aug_state = torch.cat([torch.tensor(state), action_history])
+        
+        return aug_state
+    
+    def update_buffers(self, obs, action):
+        """Update observation and action buffers"""
+        self.obs_buffer.append(obs)
+        self.action_buffer.append(action)
 
     def update_params(self, rollout, dtype, device):
 
@@ -195,16 +211,17 @@ def train(args):
     envname = env.spec.id
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.shape[0]
+    aug_obs_dim = obs_dim + args.delay_steps * act_dim
 
     # Initialize random seeds
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
     env.reset(seed=args.seed)
 
-    # Initialize neural nets
-    policy = GaussianPolicy(obs_dim, act_dim, args.hidden_size, args.activation, args.logstd)
-    value_net = Value(obs_dim, args.hidden_size, args.activation)
-    cvalue_net = Value(obs_dim, args.hidden_size, args.activation)
+    # Initialize neural nets (input is augmented observation network)
+    policy = GaussianPolicy(aug_obs_dim, act_dim, args.hidden_size, args.activation, args.logstd)
+    value_net = Value(aug_obs_dim, args.hidden_size, args.activation)
+    cvalue_net = Value(aug_obs_dim, args.hidden_size, args.activation)
     policy.to(device)
     value_net.to(device)
     cvalue_net.to(device)
@@ -238,7 +255,7 @@ def train(args):
                    args.num_epochs, args.mb_size,
                    args.c_gamma, args.lam, args.delta, args.eta,
                    args.nu, args.nu_lr, args.nu_max, cost_lim,
-                   args.l2_reg, score_queue, cscore_queue, logger)
+                   args.l2_reg, args.delay_steps, score_queue, cscore_queue, logger)
 
     start_time = time.time()
 
@@ -248,9 +265,9 @@ def train(args):
         agent.logger.save_model('iter', iter)
 
         # Collect trajectories
-        data_generator = DataGenerator(obs_dim, act_dim, args.batch_size, args.max_eps_len)
+        data_generator = DataGenerator(aug_obs_dim, act_dim, args.batch_size, args.max_eps_len)
         rollout = data_generator.run_traj(env, agent.policy, agent.value_net, agent.cvalue_net,
-                                          running_stat, agent.score_queue, agent.cscore_queue,
+                                          args.delay_steps, running_stat, agent.score_queue, agent.cscore_queue,
                                           args.gamma, args.c_gamma, args.gae_lam, args.c_gae_lam,
                                           dtype, device, args.constraint)
 
@@ -323,6 +340,8 @@ if __name__ == '__main__':
                         help='Number of passes through each minibatch per update (default: 10)')
     parser.add_argument('--max-iter-num', type=int, default=500,
                         help='Number of Main Iterations (default: 500)')
+    parser.add_argument('--delay-steps', type=int, default=5,
+                       help='Number of delay steps (default: 5)')
     args = parser.parse_args()
 
     train(args)

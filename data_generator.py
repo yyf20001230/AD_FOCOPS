@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from utils import torch_to_numpy
-
+from collections import deque
 
 class DataGenerator:
     """
@@ -11,16 +11,16 @@ class DataGenerator:
         https://github.com/ikostrikov/pytorch-a2c-ppo-acktr-gail
         https://github.com/ikostrikov/pytorch-trpo
     """
-    def __init__(self, obs_dim, act_dim, batch_size, max_eps_len):
+    def __init__(self, aug_obs_dim, act_dim, batch_size, max_eps_len):
 
         # Hyperparameters
-        self.obs_dim = obs_dim
+        self.aug_obs_dim = aug_obs_dim
         self.act_dim = act_dim
         self.batch_size = batch_size
         self.max_eps_len = max_eps_len
 
         # Batch buffer
-        self.obs_buf = np.zeros((batch_size, obs_dim), dtype=np.float32)
+        self.obs_buf = np.zeros((batch_size, aug_obs_dim), dtype=np.float32)
         self.act_buf = np.zeros((batch_size, act_dim),  dtype=np.float32)
         self.vtarg_buf = np.zeros((batch_size, 1), dtype=np.float32)
         self.adv_buf = np.zeros((batch_size, 1), dtype=np.float32)
@@ -28,8 +28,8 @@ class DataGenerator:
         self.cadv_buf = np.zeros((batch_size, 1), dtype=np.float32)
 
         # Episode buffer
-        self.obs_eps = np.zeros((max_eps_len, obs_dim),  dtype=np.float32)
-        self.next_obs_eps = np.zeros((max_eps_len, obs_dim),  dtype=np.float32)
+        self.obs_eps = np.zeros((max_eps_len, aug_obs_dim),  dtype=np.float32)
+        self.next_obs_eps = np.zeros((max_eps_len, aug_obs_dim),  dtype=np.float32)
         self.act_eps = np.zeros((max_eps_len, act_dim),  dtype=np.float32)
         self.rew_eps = np.zeros((max_eps_len, 1),  dtype=np.float32)
         self.cost_eps = np.zeros((max_eps_len, 1), dtype=np.float32)
@@ -40,7 +40,14 @@ class DataGenerator:
         # Pointer
         self.ptr = 0
 
-    def run_traj(self, env, policy, value_net, cvalue_net, running_stat,
+    # New helper method:
+    def get_augmented_state(self, state, action_buffer):
+        """Convert raw state to augmented state with action history"""
+        action_history = np.concatenate(list(action_buffer), axis=0)
+        aug_state = np.concatenate([state, action_history])
+        return aug_state
+
+    def run_traj(self, env, policy, value_net, cvalue_net, delay_steps, running_stat,
                  score_queue, cscore_queue, gamma, c_gamma, gae_lam, c_gae_lam,
                  dtype, device, constraint):
 
@@ -55,11 +62,20 @@ class DataGenerator:
             obs, _ = env.reset()
             if running_stat is not None:
                 obs = running_stat.normalize(obs)
+
+            # initialize action buffer for delay
+            action_buffer = deque(maxlen=delay_steps)
+            for _ in range(delay_steps):
+                action_buffer.append(np.zeros(self.act_dim))
+
+            # get initial augmented state
+            aug_obs = self.get_augmented_state(obs, action_buffer)
+
             ret_eps = 0
             cost_ret_eps = 0
 
             for t in range(self.max_eps_len):
-                act = policy.get_act(torch.Tensor(obs).to(dtype).to(device))
+                act = policy.get_act(torch.Tensor(aug_obs).to(dtype).to(device))
                 act = torch_to_numpy(act).squeeze()
                 next_obs, rew, terminated, truncated, info = env.step(act)
                 done = np.logical_or(terminated, truncated)
@@ -75,17 +91,21 @@ class DataGenerator:
                 ret_eps += rew
                 cost_ret_eps += (c_gamma ** t) * cost
 
+                # Update action buffer and get next augmented state
+                action_buffer.append(act)
+
                 if running_stat is not None:
                     next_obs = running_stat.normalize(next_obs)
+                next_aug_obs = self.get_augmented_state(next_obs, action_buffer)
 
                 # Store in episode buffer
-                self.obs_eps[t] = obs
+                self.obs_eps[t] = aug_obs
                 self.act_eps[t] = act
-                self.next_obs_eps[t] = next_obs
+                self.next_obs_eps[t] = next_aug_obs
                 self.rew_eps[t] = rew
                 self.cost_eps[t] = cost
 
-                obs = next_obs
+                aug_obs = next_aug_obs
 
                 self.eps_len += 1
                 batch_idx += 1
@@ -126,8 +146,8 @@ class DataGenerator:
             self.ptr = end_idx
 
             # Reset episode buffer and update pointer
-            self.obs_eps = np.zeros((self.max_eps_len, self.obs_dim), dtype=np.float32)
-            self.next_obs_eps = np.zeros((self.max_eps_len, self.obs_dim), dtype=np.float32)
+            self.obs_eps = np.zeros((self.max_eps_len, self.aug_obs_dim), dtype=np.float32)
+            self.next_obs_eps = np.zeros((self.max_eps_len, self.aug_obs_dim), dtype=np.float32)
             self.act_eps = np.zeros((self.max_eps_len, self.act_dim), dtype=np.float32)
             self.rew_eps = np.zeros((self.max_eps_len, 1), dtype=np.float32)
             self.cost_eps = np.zeros((self.max_eps_len, 1), dtype=np.float32)
