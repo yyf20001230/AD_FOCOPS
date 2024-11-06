@@ -1,5 +1,5 @@
 import argparse
-import gym
+import gymnasium as gym
 import torch.nn as nn
 import time
 from data_generator import DataGenerator
@@ -32,12 +32,21 @@ class FOCOPS:
                  nu_max,
                  cost_lim,
                  l2_reg,
+                #  delay_steps,
                  score_queue,
                  cscore_queue,
                  logger):
 
 
         self.env = env
+        # self.delay_steps = delay_steps
+
+        # # Initialize observation and action buffers for delay
+        # self.obs_buffer = deque(maxlen=delay_steps + 1)
+        # self.action_buffer = deque(maxlen=delay_steps)
+
+        # # Get augmented state dimension (state + delay_steps * action_dim)
+        # self.aug_obs_dim = env.observation_space.shape[0] + delay_steps * env.action_space.shape[0]
 
         self.policy = policy_net
         self.value_net = value_net
@@ -190,7 +199,7 @@ def train(args):
     # Initialize random seeds
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    env.seed(args.seed)
+    env.reset(seed=args.seed)
 
     # Initialize neural nets
     policy = GaussianPolicy(obs_dim, act_dim, args.hidden_size, args.activation, args.logstd)

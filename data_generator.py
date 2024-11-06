@@ -52,7 +52,7 @@ class DataGenerator:
         num_eps = 0
 
         while batch_idx < self.batch_size:
-            obs = env.reset()
+            obs, _ = env.reset()
             if running_stat is not None:
                 obs = running_stat.normalize(obs)
             ret_eps = 0
@@ -61,8 +61,8 @@ class DataGenerator:
             for t in range(self.max_eps_len):
                 act = policy.get_act(torch.Tensor(obs).to(dtype).to(device))
                 act = torch_to_numpy(act).squeeze()
-                next_obs, rew, done, info = env.step(act)
-
+                next_obs, rew, terminated, truncated, info = env.step(act)
+                done = np.logical_or(terminated, truncated)
 
                 if constraint == 'velocity':
                     if 'y_velocity' not in info:
