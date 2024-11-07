@@ -9,7 +9,8 @@ def get_threshold(env, constraint='velocity'):
                       'Hopper-v3': 82.748,
                       'Humanoid-v4': 20.140,
                       'Swimmer-v3': 24.516,
-                      'Walker2d-v3': 81.886}
+                      'Walker2d-v3': 81.886,
+                      'SafetyHopperVelocity-v1': 25.000}
 
 
         return thresholds[env]

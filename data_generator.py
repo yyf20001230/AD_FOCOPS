@@ -43,13 +43,16 @@ class DataGenerator:
     # New helper method:
     def get_augmented_state(self, state, action_buffer):
         """Convert raw state to augmented state with action history"""
-        action_history = np.concatenate(list(action_buffer), axis=0)
-        aug_state = np.concatenate([state, action_history])
-        return aug_state
+        if len(action_buffer) != 0:
+            action_history = np.concatenate(list(action_buffer), axis=0)
+            aug_state = np.concatenate([state, action_history])
+            return aug_state
+        else:
+            return state
 
     def run_traj(self, env, policy, value_net, cvalue_net, delay_steps, running_stat,
                  score_queue, cscore_queue, gamma, c_gamma, gae_lam, c_gae_lam,
-                 dtype, device, constraint):
+                 dtype, device):
 
         batch_idx = 0
 
@@ -77,16 +80,8 @@ class DataGenerator:
             for t in range(self.max_eps_len):
                 act = policy.get_act(torch.Tensor(aug_obs).to(dtype).to(device))
                 act = torch_to_numpy(act).squeeze()
-                next_obs, rew, terminated, truncated, info = env.step(act)
+                next_obs, rew, cost, terminated, truncated, _ = env.step(act)
                 done = np.logical_or(terminated, truncated)
-
-                if constraint == 'velocity':
-                    if 'y_velocity' not in info:
-                        cost = np.abs(info['x_velocity'])
-                    else:
-                        cost = np.sqrt(info['x_velocity'] ** 2 + info['y_velocity'] ** 2)
-                elif constraint == 'circle':
-                    cost = info['cost']
 
                 ret_eps += rew
                 cost_ret_eps += (c_gamma ** t) * cost

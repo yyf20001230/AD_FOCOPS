@@ -1,5 +1,5 @@
 import argparse
-import gymnasium as gym
+import safety_gymnasium as gym
 import torch.nn as nn
 import time
 from data_generator import DataGenerator
@@ -269,7 +269,7 @@ def train(args):
         rollout = data_generator.run_traj(env, agent.policy, agent.value_net, agent.cvalue_net,
                                           args.delay_steps, running_stat, agent.score_queue, agent.cscore_queue,
                                           args.gamma, args.c_gamma, args.gae_lam, args.c_gae_lam,
-                                          dtype, device, args.constraint)
+                                          dtype, device)
 
         # Update FOCOPS parameters
         agent.update_params(rollout, dtype, device)
